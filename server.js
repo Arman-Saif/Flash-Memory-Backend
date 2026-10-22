@@ -521,40 +521,6 @@ app.get("/api/leaderboard/archives", async (req, res) => {
     return res.status(500).json({ error: "Failed to fetch archives." });
   }
 });
-async function ensureUserProfile(user) {
-  const userId = user.id;
-
-  const { data: existingProfile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (!existingProfile) {
-    const meta = user.user_metadata || {};
-    const firstName =
-      meta.first_name || meta.firstName || meta.given_name || "";
-    const lastName = meta.last_name || meta.lastName || meta.family_name || "";
-
-    let fallbackFirst = firstName;
-    let fallbackLast = lastName;
-
-    if (!fallbackFirst && !fallbackLast && user.email) {
-      fallbackFirst = user.email.split("@")[0];
-    }
-
-    await supabase.from("profiles").upsert(
-      {
-        id: userId,
-        first_name: fallbackFirst || "Player",
-        last_name: fallbackLast || "",
-        email: user.email || "",
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "id" },
-    );
-  }
-}
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () =>
