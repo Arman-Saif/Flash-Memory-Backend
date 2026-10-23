@@ -6,9 +6,9 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-app.use(cors({origin:"https://memoryflash.vercel.app",credentials: true,
+app.use(cors({origin:"localhost:4173/api",credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]}));
+  allowedHeaders: ["Content-Type", "Authorization"]})); //Need Frontend URL
 app.use(express.json());
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -308,7 +308,6 @@ app.get("/user/rank", verifyAuth, async (req, res) => {
 });
 
 /**
- * POST /api/scores
  * Submits high score using First and Last name directly from profiles DB
  */
 app.post("/scores", verifyAuth, async (req, res) => {
