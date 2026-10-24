@@ -5,10 +5,18 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const app = express();
-app.use(cors({origin:[${process.env.FRONTEND_URL}, "localhost:4173"],credentials: true,
+app.use(cors({
+  origin: [
+    `${process.env.FRONTEND_URL}`, 
+    "http://localhost:5173", 
+    "http://localhost:4173"
+  ],
+  credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]})); //Need Frontend URL
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
+const app = express(); 
 app.use(express.json());
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
