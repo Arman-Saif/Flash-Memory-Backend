@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-app.use(cors({origin:"localhost:4173/api",credentials: true,
+app.use(cors({origin:[process.env.FRONTEND_URL, localhost:4173],credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]})); //Need Frontend URL
 app.use(express.json());
@@ -164,7 +164,7 @@ async function checkGridGuardian(userId, region) {
  * GET /api/user/profile-data
  * Returns streak, clean achievements, and explicit profile names
  */
-app.get("/user/profile-data", verifyAuth, async (req, res) => {
+app.get("/api/user/profile-data", verifyAuth, async (req, res) => {
   const userId = req.user.id;
   await ensureUserProfile(req.user);
 
@@ -209,7 +209,7 @@ app.get("/user/profile-data", verifyAuth, async (req, res) => {
  * PUT /api/user/profile
  * Explicitly updates first and last name in profiles table & syncs leaderboard
  */
-app.put("/user/profile", verifyAuth, async (req, res) => {
+app.put("/api/user/profile", verifyAuth, async (req, res) => {
   const userId = req.user.id;
   const { firstName, lastName } = req.body;
 
@@ -256,7 +256,7 @@ app.put("/user/profile", verifyAuth, async (req, res) => {
  * GET /api/user/rank
  * Calculates exact leaderboard rank for user by mode and region
  */
-app.get("/user/rank", verifyAuth, async (req, res) => {
+app.get("/api/user/rank", verifyAuth, async (req, res) => {
   const userId = req.user.id;
   const { mode, region } = req.query;
 
@@ -310,7 +310,7 @@ app.get("/user/rank", verifyAuth, async (req, res) => {
 /**
  * Submits high score using First and Last name directly from profiles DB
  */
-app.post("/scores", verifyAuth, async (req, res) => {
+app.post("/api/scores", verifyAuth, async (req, res) => {
   const userId = req.user.id;
   await ensureUserProfile(req.user);
 
@@ -368,7 +368,7 @@ app.post("/scores", verifyAuth, async (req, res) => {
 /**
  * POST /api/stats/round-complete
  */
-app.post("/stats/round-complete", verifyAuth, async (req, res) => {
+app.post("/api/stats/round-complete", verifyAuth, async (req, res) => {
   const userId = req.user.id;
   await ensureUserProfile(req.user);
   const { timeTakenSeconds } = req.body;
@@ -409,7 +409,7 @@ app.post("/stats/round-complete", verifyAuth, async (req, res) => {
 /**
  * POST /api/stats/mode-achievement
  */
-app.post("/stats/mode-achievement", verifyAuth, async (req, res) => {
+app.post("/api/stats/mode-achievement", verifyAuth, async (req, res) => {
   const userId = req.user.id;
   await ensureUserProfile(req.user);
   const { mode, score, roundReached, seasonId } = req.body;
@@ -479,7 +479,7 @@ app.post("/stats/mode-achievement", verifyAuth, async (req, res) => {
 /**
  * GET /api/leaderboard
  */
-app.get("/leaderboard", async (req, res) => {
+app.get("/api/leaderboard", async (req, res) => {
   const { region, mode } = req.query;
   try {
     let query = supabase
@@ -503,7 +503,7 @@ app.get("/leaderboard", async (req, res) => {
 /**
  * GET /api/leaderboard/archives
  */
-app.get("/leaderboard/archives", async (req, res) => {
+app.get("/api/leaderboard/archives", async (req, res) => {
   const { season_type, mode } = req.query;
   try {
     let query = supabase
