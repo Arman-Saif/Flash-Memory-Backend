@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 
 dotenv.config();
-
+const app = express(); 
 app.use(cors({
   origin: [
     `${process.env.FRONTEND_URL}`, 
@@ -16,7 +16,7 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-const app = express(); 
+
 app.use(express.json());
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
