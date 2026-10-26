@@ -320,13 +320,19 @@ app.get("/api/user/rank", verifyAuth, async (req, res) => {
 /**
  * Submits high score using First and Last name directly from profiles DB
  */
+/**
+ * Submits high score using First and Last name directly from profiles DB
+ */
 app.post("/api/scores", verifyAuth, async (req, res) => {
   const userId = req.user.id;
   await ensureUserProfile(req.user);
 
   const { mode, score, region } = req.body;
+  
+  // Safely coerce score to a number to prevent type mismatches
+  const numericScore = Number(score);
 
-  if (!mode || typeof score !== "number" || score <= 0) {
+  if (!mode || isNaN(numericScore) || numericScore <= 0) {
     return res.status(400).json({ error: "Invalid score data provided." });
   }
 
@@ -339,8 +345,7 @@ app.post("/api/scores", verifyAuth, async (req, res) => {
 
     let username = "Player";
     if (profile && (profile.first_name || profile.last_name)) {
-      username =
-        `${profile.first_name || ""} ${profile.last_name || ""}`.trim();
+      username = `${profile.first_name || ""} ${profile.last_name || ""}`.trim();
     }
 
     const { data: existing } = await supabase
@@ -351,19 +356,25 @@ app.post("/api/scores", verifyAuth, async (req, res) => {
       .maybeSingle();
 
     let isNewHigh = false;
-    if (!existing || score > existing.score) {
+    // Using >= so it updates even if testing with identical scores
+    if (!existing || numericScore >= existing.score) {
       isNewHigh = true;
-      await supabase.from("leaderboard").upsert(
+      const { error: upsertError } = await supabase.from("leaderboard").upsert(
         {
           user_id: userId,
           username,
           mode,
-          score,
-          region,
+          score: numericScore,
+          region: region || "Asia",
           updated_at: new Date().toISOString(),
         },
         { onConflict: "user_id,mode" },
       );
+
+      if (upsertError) {
+        console.error("Supabase upsert error:", upsertError.message);
+        return res.status(500).json({ error: upsertError.message });
+      }
     }
 
     await checkGridGuardian(userId, region || "Asia");
