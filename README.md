@@ -25,152 +25,127 @@ CLIENT_ORIGIN=https://memoryflash.vercel.app
 ```
 ## SQL editor code
 ```SQL
--- ==========================================
--- 1. EXTENSIONS & PROFILES TABLE
--- ==========================================
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Enable UUID extension if not already enabled
+create extension if not exists "uuid-ossp";
 
-CREATE TABLE IF NOT EXISTS public.profiles (
-    id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
-    first_name TEXT,
-    last_name TEXT,
-    email TEXT,
-    username TEXT UNIQUE NOT NULL,
-    avatar_url TEXT,
-    total_games_played INTEGER DEFAULT 0,
-    highest_score INTEGER DEFAULT 0,
-    current_streak INTEGER DEFAULT 0,
-    best_streak INTEGER DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+-- ==========================================
+-- 1. TABLES CREATION
+-- ==========================================
+
+create table public.profiles (
+  id uuid not null references auth.users on delete cascade primary key,
+  first_name text,
+  last_name text,
+  email text,
+  profile_url text unique,
+  avatar_url text,
+  streak integer default 0,
+  streak_seasons integer default 0,
+  rank text default 'UNRANKED',
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- Trigger function to automatically create/update profile details on Auth signup
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO public.profiles (id, first_name, last_name, email, username, avatar_url)
-    VALUES (
-        NEW.id,
-        COALESCE(NEW.raw_user_meta_data->>'first_name', split_part(NEW.raw_user_meta_data->>'full_name', ' ', 1), ''),
-        COALESCE(NEW.raw_user_meta_data->>'last_name', split_part(NEW.raw_user_meta_data->>'full_name', ' ', 2), ''),
-        NEW.email,
-        COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
-        NEW.raw_user_meta_data->>'avatar_url'
-    )
-    ON CONFLICT (id) DO UPDATE SET
-        first_name = EXCLUDED.first_name,
-        last_name = EXCLUDED.last_name,
-        email = EXCLUDED.email,
-        updated_at = timezone('utc'::text, now());
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Re-create the trigger safely
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-    AFTER INSERT ON auth.users
-    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
-
--- ==========================================
--- 2. LEADERBOARD TABLE (Active & Historical Seasons)
--- ==========================================
-CREATE TABLE IF NOT EXISTS public.leaderboard (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-    score INTEGER NOT NULL DEFAULT 0,
-    mode TEXT NOT NULL DEFAULT 'expert', -- 'easy', 'medium', 'expert'
-    region TEXT NOT NULL DEFAULT 'Asia',
-    streak INTEGER NOT NULL DEFAULT 0,
-    season_type TEXT NOT NULL DEFAULT 'all_time', -- 'weekly', 'monthly', 'all_time'
-    season_identifier TEXT NOT NULL DEFAULT 'global', -- e.g., '2026-W43', '2026-10', or 'global'
-    is_archived BOOLEAN DEFAULT FALSE, -- Flag for past completed seasons
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    UNIQUE(user_id, mode, region, season_type, season_identifier)
+create table public.leaderboard (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  username text,
+  mode text not null,
+  score integer not null,
+  region text default 'Asia',
+  season_started_at timestamp with time zone,
+  season_ends_at timestamp with time zone,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  constraint leaderboard_user_mode_key unique (user_id, mode)
 );
 
--- Indexes for fast query execution on active rankings and historical archives
-CREATE INDEX IF NOT EXISTS idx_seasonal_leaderboard 
-ON public.leaderboard (season_type, season_identifier, mode, region, score DESC);
-
-CREATE INDEX IF NOT EXISTS idx_archived_leaderboard 
-ON public.leaderboard (is_archived, season_type, season_identifier);
-
-
--- ==========================================
--- 3. ACHIEVEMENTS & USER UNLOCKS
--- ==========================================
-CREATE TABLE IF NOT EXISTS public.achievements (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    key_name TEXT UNIQUE NOT NULL, -- e.g., 'FIRST_WIN', 'STREAK_10', 'EXPERT_MASTER'
-    title TEXT NOT NULL,
-    description TEXT,
-    multiplier DECIMAL(3,2) DEFAULT 1.00, -- Score boost multiplier (e.g., 1.15 = 15% boost)
-    icon TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+create table public.user_achievements (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  achievement_name text not null,
+  multiplier numeric default 1.0,
+  unlocked_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
-CREATE TABLE IF NOT EXISTS public.user_achievements (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-    achievement_id UUID REFERENCES public.achievements(id) ON DELETE CASCADE NOT NULL,
-    unlocked_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    UNIQUE(user_id, achievement_id)
+create table public.user_stats (
+  user_id uuid not null references public.profiles(id) on delete cascade primary key,
+  current_streak integer default 0,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+create table public.leaderboard_archives (
+  id uuid default uuid_generate_v4() primary key,
+  season_type text not null,
+  mode text not null,
+  user_id uuid not null,
+  username text,
+  score integer not null,
+  region text,
+  archived_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
 
 -- ==========================================
--- 4. DEFAULT ACHIEVEMENTS SEED DATA
+-- 2. ENABLE ROW LEVEL SECURITY (RLS)
 -- ==========================================
-INSERT INTO public.achievements (key_name, title, description, multiplier, icon)
-VALUES 
-    ('FIRST_GAME', 'First Step', 'Played your first game', 1.00, 'flag'),
-    ('STREAK_5', 'On Fire', 'Achieved a 5-game winning streak', 1.05, 'fire'),
-    ('EASY_MASTER', 'Speed Demon', 'Completed Easy mode with high score', 1.10, 'zap'),
-    ('EXPERT_PERFECT', 'Flash Legend', 'Completed Expert mode perfectly', 1.25, 'crown')
-ON CONFLICT (key_name) DO NOTHING;
 
+alter table public.profiles enable row level security;
+alter table public.leaderboard enable row level security;
+alter table public.user_achievements enable row level security;
+alter table public.user_stats enable row level security;
+alter table public.leaderboard_archives enable row level security;
 
 -- ==========================================
--- 5. ROW LEVEL SECURITY (RLS) & POLICIES
+-- 3. RLS POLICIES
 -- ==========================================
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.leaderboard ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.achievements ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_achievements ENABLE ROW LEVEL SECURITY;
 
--- Profiles Policies
-CREATE POLICY "Public profiles are viewable by everyone." 
-ON public.profiles FOR SELECT USING (true);
+-- --- PROFILES POLICIES ---
+-- Anyone can view profiles (needed for public profile pages and leaderboards)
+create policy "Public profiles are viewable by everyone."
+  on public.profiles for select
+  using (true);
 
-CREATE POLICY "Users can update their own profile." 
-ON public.profiles FOR UPDATE USING (auth.uid() = id);
+-- Users can insert their own profile
+create policy "Users can insert their own profile."
+  on public.profiles for insert
+  with check (auth.uid() = id);
 
--- Leaderboard Policies
-CREATE POLICY "Leaderboard is viewable by everyone." 
-ON public.leaderboard FOR SELECT USING (true);
-
-CREATE POLICY "Authenticated users can insert/update scores." 
-ON public.leaderboard FOR ALL 
-TO authenticated 
-USING (auth.uid() = user_id) 
-WITH CHECK (auth.uid() = user_id);
-
--- Achievement Policies
-CREATE POLICY "Achievements are viewable by everyone." 
-ON public.achievements FOR SELECT USING (true);
-
-CREATE POLICY "User achievements are viewable by everyone." 
-ON public.user_achievements FOR SELECT USING (true);
-
-CREATE POLICY "Authenticated users can unlock achievements." 
-ON public.user_achievements FOR INSERT 
-TO authenticated 
-WITH CHECK (auth.uid() = user_id);
+-- Users can update only their own profile
+create policy "Users can update their own profile."
+  on public.profiles for update
+  using (auth.uid() = id);
 
 
+-- --- LEADERBOARD POLICIES ---
+-- Anyone can view the leaderboard rankings
+create policy "Leaderboard entries are viewable by everyone."
+  on public.leaderboard for select
+  using (true);
+
+-- Users can insert or update their own scores
+create policy "Users can manage their own leaderboard entries."
+  on public.leaderboard for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+
+-- --- USER ACHIEVEMENTS POLICIES ---
+-- Achievements can be viewed publicly or by the owner
+create policy "Achievements are viewable by everyone."
+  on public.user_achievements for select
+  using (true);
+
+
+-- --- USER STATS POLICIES ---
+-- Stats can be viewed publicly (for streaks on profile cards)
+create policy "User stats are viewable by everyone."
+  on public.user_stats for select
+  using (true);
+
+
+-- --- LEADERBOARD ARCHIVES POLICIES ---
+-- Hall of fame archives are viewable by everyone
+create policy "Archives are viewable by everyone."
+  on public.leaderboard_archives for select
+  using (true);
 ```
 ---
 
@@ -181,6 +156,6 @@ WITH CHECK (auth.uid() = user_id);
 npm install
 
 # Start development server locally
-npm run dev
+npm run server
 
 ```
